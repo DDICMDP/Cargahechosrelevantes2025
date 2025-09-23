@@ -544,13 +544,31 @@ window.addEventListener("DOMContentLoaded", () => {
     try{ window.HRFMT.downloadCSV(list); }catch(e){ alert("No se pudo exportar CSV: "+e.message); }
   });
 
-  // ====== Exportar Excel (XLSX listo)
+  // ====== Excel: usar copia local ya cargada en index.html
+  function whenXLSXReady(cb){
+    const btn = document.getElementById("exportXLSX");
+    if (btn) { btn.disabled = true; btn.title = "Cargando Excel..."; }
+    const start = Date.now();
+    (function tick(){
+      if (window.XLSX){
+        if (btn) { btn.disabled = false; btn.title = ""; }
+        cb();
+      }else if (Date.now() - start < 10000){
+        setTimeout(tick, 100);
+      }else{
+        alert("No se pudo inicializar Excel (XLSX). Verificá que exista vendor/xlsx.full.min.js.");
+        if (btn) { btn.disabled = false; btn.title = ""; }
+      }
+    })();
+  }
+
   $("exportXLSX")?.addEventListener("click", ()=>{
-    const ids=selectedChecks();
-    const list = ids.length? getCases().filter(c=> ids.includes(c.id)) : [ buildData() ];
-    if (!list.length){ alert("Nada para exportar"); return; }
-    if (!window.XLSX){ alert("Falta incluir SheetJS (xlsx.full.min.js)"); return; }
-    try{ window.HRFMT.downloadXLSX(list); }catch(e){ alert("No se pudo exportar XLSX: "+e.message); }
+    whenXLSXReady(()=>{
+      const ids=selectedChecks();
+      const list = ids.length? getCases().filter(c=> ids.includes(c.id)) : [ buildData() ];
+      if (!list.length){ alert("Nada para exportar"); return; }
+      try{ window.HRFMT.downloadXLSX(list); }catch(e){ alert("No se pudo exportar XLSX: "+e.message); }
+    });
   });
 
   // ====== Catálogos (Admin)
