@@ -206,19 +206,23 @@
         <span class="spacer"></span>
         <button class="btn" id="downloadWordMulti">Word (seleccionados)</button>
         <button class="btn" id="exportCSV">CSV (seleccionados / actual)</button>
+        <!-- 👉 NUEVO botón Excel -->
+        <button class="btn" id="exportXLSX">Excel (seleccionados / actual)</button>
         <span class="spacer"></span>
         <button class="btn adminOnly" id="backupJSON" disabled>Backup JSON</button>
         <button class="btn adminOnly" id="restoreJSON" disabled>Restaurar/Remplazar JSON</button>
         <button class="btn adminOnly" id="mergeJSON" disabled>Fusionar JSON</button>
-      </div>
+     </div>
     </div>
   </section>
 </main>
 <script defer src="tabs.js"></script>
+
+<!-- ✅ Carga LOCAL de SheetJS -->
+<script defer src="vendor/xlsx.full.min.js"></script>
+
 <script defer src="formatter.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.min.js"></script>
-<!-- Opcional para Excel: -->
-<script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js"></script>
 <script defer src="app.js"></script>
 </body>
 </html>
