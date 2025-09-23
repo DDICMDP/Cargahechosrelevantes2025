@@ -1,203 +1,210 @@
-// formatter.js — V9 (título con regla de PU/no PU y WhatsApp en una línea, regex seguro)
+// formatter.js — V9 PRO (WA multiline + personas bold/italic + Docx simple y múltiple + CSV/XLSX)
 window.HRFMT = (function () {
-  const titleCase = (s) =>
-    (s || "").toLowerCase().replace(
-      /\b([a-záéíóúñü])([a-záéíóúñü]*)/gi,
-      (_, a, b) => a.toUpperCase() + b
-    );
+  const titleCase = (s)=> (s||"")
+    .toLowerCase()
+    .replace(/\b([a-záéíóúñü])([a-záéíóúñü]*)/gi, (_,a,b)=> a.toUpperCase()+b);
 
-  const nonEmpty = (x) => (x ?? "").toString().trim().length > 0;
+  const nonEmpty = (x)=> (x??"").toString().trim().length>0;
+  const oneLine = (t)=> (t||"").replace(/\s*\n+\s*/g," ").replace(/[ \t]{2,}/g," ").trim();
 
-  function oneLineForWA(txt) {
-    if (!txt) return "";
-    return txt.replace(/\s*\n+\s*/g, " ").replace(/[ \t]{2,}/g, " ").trim();
+  // **_Nombre Apellido (edad, domicilio)_**  ← negrita + cursiva (sin subrayado)
+  const niceName = (p)=>{
+    const n = titleCase(p?.nombre||"");
+    const a = titleCase(p?.apellido||"");
+    const full = [n,a].filter(Boolean).join(" ");
+    if (!full) return "";
+    const parts = [];
+    if (p?.edad && String(p.edad).trim()) parts.push(String(p.edad).trim());
+    const domBits = [p?.calle_domicilio, p?.loc_domicilio].map(x=> titleCase(x||"")).filter(Boolean);
+    if (domBits.length) parts.push(domBits.join(", "));
+    const paren = parts.length ? ` (${parts.join(", ")})` : "";
+    return `*_${full}${paren}_*`;
+  };
+
+  function buildTitulo(d){
+    const g=d.generales||{};
+    const f=g.fecha_hora||"";
+    const dep=titleCase(g.dependencia||"");
+    const car=titleCase(g.caratula||"");
+    const tipo=g.tipoExp||"PU"; const num=(g.numExp||"").trim();
+    const parts=[]; if(f) parts.push(f);
+    if(num){ parts.push(`${tipo} ${num}`); if(dep) parts.push(dep); if(car) parts.push(car); }
+    else { parts.push("Info DDIC Mar del Plata","Adelanto"); if(dep) parts.push(dep); if(car) parts.push(car); }
+    return parts.filter(nonEmpty).join(" - ");
   }
 
-  function niceName(p) {
-    const nombre = titleCase(p?.nombre || "");
-    const apellido = titleCase(p?.apellido || "");
-    const full = [nombre, apellido].filter(Boolean).join(" ").trim();
-    return full ? `*_${full}_*` : "";
-  }
-
-  // ===== Título =====
-  function buildTitulo(d) {
-    const g = d.generales || {};
-    const fecha = g.fecha_hora || "";
-    const dep   = titleCase(g.dependencia || "");
-    const car   = titleCase(g.caratula || "");
-    const sub   = titleCase(g.subtitulo || "");
-    const tipo  = g.tipoExp || "PU";
-    const num   = (g.numExp || "").trim();
-
-    const partes = [];
-    if (fecha) partes.push(fecha);
-
-    if (num) {
-      partes.push(`${tipo} ${num}`);
-      if (dep) partes.push(dep);
-      if (car) partes.push(car);
-      if (sub) partes.push(sub);
-    } else {
-      partes.push("Info DDIC Mar del Plata");
-      partes.push("Adelanto");
-      if (dep) partes.push(dep);
-      if (car) partes.push(car);
-      if (sub) partes.push(sub);
-    }
-    return partes.filter(nonEmpty).join(" - ");
-  }
-
-  // ===== Expansión de etiquetas =====
-  const ROLES = [
-    "victima","imputado","sindicado","denunciante","testigo","pp",
-    "aprehendido","detenido","menor","nn","interviniente","damnificado institucional"
-  ];
-  const OBJT  = ["secuestro","sustraccion","hallazgo","otro"];
-
-  // Escapa texto para usar dentro de un RegExp
-  const reEscape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-  function expandTags(d, raw) {
-    const civ  = d.civiles || [];
-    const fza  = d.fuerzas || [];
-    const objs = d.objetos || [];
-    const allPeople = civ.concat(fza);
-
-    const personByRoleIndex = (role, i) =>
-      allPeople.filter(p => (p.vinculo || "").toLowerCase() === role)[+i] || null;
-
-    const pfByIndex = (i) => fza[+i] || null;
-
-    const objList = (cat) =>
-      objs.filter(o => (o.vinculo || "").toLowerCase() === cat).map(o => o.descripcion);
-
-    let texto = raw || "";
-
-    // Roles (construimos el patrón dinámicamente)
-    const rolesPattern = ROLES.map(reEscape).join("|");
-    const rePersonIdx  = new RegExp(`#(${rolesPattern}):(\\d+)`, "gi");
-    texto = texto.replace(rePersonIdx, (_, rol, idx) => {
-      const p = personByRoleIndex(rol.toLowerCase(), idx);
-      return p ? niceName(p) : `#${rol}:${idx}`;
+  // Reemplazo de etiquetas (#victima:0, #pf, #secuestro, etc.)
+  function expandTags(d, raw){
+    const civ=d.civiles||[], fza=d.fuerzas||[], objs=d.objetos||[];
+    const all=civ.concat(fza);
+    const personBy=(role,i)=> all.filter(p=> (p.vinculo||"").toLowerCase()===role)[+i]||null;
+    const pfBy=(i)=> fza[+i]||null;
+    const objList=(cat)=> objs.filter(o=> (o.vinculo||"").toLowerCase()===cat).map(o=>o.descripcion);
+    let texto=raw||"";
+    const ROLES="victima|imputado|sindicado|denunciante|testigo|pp|aprehendido|detenido|menor|nn|interviniente|damnificado institucional";
+    texto = texto.replace(new RegExp(`#(${ROLES}):(\\d+)`,"gi"),(_,r,i)=>{ const p=personBy(r.toLowerCase(),i); return p? niceName(p): `#${r}:${i}`; });
+    texto = texto.replace(/#pf:(\d+)/gi,(_,i)=>{ const p=pfBy(i); return p? niceName(p): `#pf:${i}`; });
+    texto = texto.replace(/#pf\b/gi, ()=> fza.length? niceName(fza[0]) : "#pf");
+    ["secuestro","sustraccion","hallazgo","otro"].forEach(cat=>{
+      const reIdx=new RegExp(`#${cat}:(\\d+)`,"gi");
+      texto=texto.replace(reIdx,(_,i)=>{ const arr=objList(cat); const o=arr[+i]; return o? `_${o}_`:`#${cat}:${i}`; });
+      const re=new RegExp(`#${cat}\\b`,"gi");
+      texto=texto.replace(re,()=>{ const arr=objList(cat); return arr.length? `_${arr.join(", ")}_`:`#${cat}`; });
     });
-
-    // PF por índice y por atajo #pf
-    texto = texto.replace(/#pf:(\d+)/gi, (_, i) => {
-      const p = pfByIndex(i);
-      return p ? niceName(p) : `#pf:${i}`;
-    });
-    texto = texto.replace(/#pf\b/gi, () => (fza.length ? niceName(fza[0]) : "#pf"));
-
-    // Objetos: por índice y por categoría
-    OBJT.forEach((cat) => {
-      const catEsc = reEscape(cat);
-      const reIdx  = new RegExp(`#${catEsc}:(\\d+)`, "gi");
-      texto = texto.replace(reIdx, (_, i) => {
-        const arr = objList(cat);
-        const o = arr[+i];
-        return o ? `_${o}_` : `#${cat}:${i}`;
-      });
-
-      const reAny = new RegExp(`#${catEsc}\\b`, "gi");
-      texto = texto.replace(reAny, () => {
-        const arr = objList(cat);
-        return arr.length ? `_${arr.join(", ")}_` : `#${cat}`;
-      });
-    });
-
     return texto;
-    // (Fin expandTags)
   }
 
-  function buildAll(data) {
-    const d = data || {};
-    const g = d.generales || {};
-    const tituloPlano = buildTitulo(d);
-    let cuerpo = expandTags(d, d.cuerpo || "");
+  // Primer párrafo del cuerpo (para el extracto de WhatsApp)
+  function extractFirstParagraph(s){
+    const t = (s||"").trim();
+    if (!t) return "";
+    const firstPara = t.split(/\n{2,}/)[0].trim();
+    return oneLine(firstPara);
+  }
 
-    // WhatsApp en una sola línea y subtítulo pegado
-    const waBody  = oneLineForWA(cuerpo);
+  function buildAll(data){
+    const d=data||{}; const g=d.generales||{};
+    const tituloPlano=buildTitulo(d);
+    const cuerpoExp=expandTags(d, d.cuerpo||"");
+    const extracto = extractFirstParagraph(cuerpoExp);
+
     const waTitle = `*${tituloPlano}*`;
-    const wa      = `${waTitle} ${g.subtitulo ? titleCase(g.subtitulo)+" " : ""}${waBody}`.trim();
+    // CAMBIO: subtítulo en NEGRITA (antes itálica)
+    const waSub   = g.subtitulo ? `*${titleCase(g.subtitulo)}*` : "";
 
-    // Para Word
-    const bodyDocx = (cuerpo || "").replace(/\r/g, "").trim();
+    // WhatsApp: 3 líneas (título / subtítulo / extracto)
+    const waMulti = [waTitle, waSub, extracto].filter(Boolean).join("\n");
+    // WhatsApp: 1 línea (modo “Sin saltos”)
+    const waLong  = oneLine([waTitle, waSub, extracto].filter(Boolean).join(" "));
 
     return {
-      waLong: wa,
-      html: wa,
+      waLong,      // 1 línea
+      waMulti,     // 3 líneas
+      html: waMulti,
       forDocx: {
         titulo: tituloPlano,
-        subtitulo: titleCase(g.subtitulo || ""),
-        color: g.esclarecido ? "00AEEF" : "FF3B30",
-        bodyHtml: bodyDocx
+        subtitulo: titleCase(g.subtitulo||""),
+        color: g.esclarecido? "00AEEF":"FF3B30",
+        bodyHtml: (cuerpoExp||"").replace(/\r/g,"").trim()
       }
     };
   }
 
-  function downloadCSV(list) {
-    const rows = [];
-    rows.push([
-      "Nombre","Fecha","Tipo","Número","Partido","Localidad",
-      "Dependencia","Carátula","Subtítulo","Cuerpo"
-    ].join(","));
-    (list || []).forEach((s) => {
-      const g = s.generales || {};
-      const safe = (x) => `"${(x || "").toString().replace(/"/g, '""')}"`;
-      rows.push([
-        s.name || "", g.fecha_hora || "", g.tipoExp || "", g.numExp || "",
-        g.partido || "", g.localidad || "", g.dependencia || "",
-        g.caratula || "", g.subtitulo || "", (s.cuerpo || "").replace(/\n/g, " \\n ")
-      ].map(safe).join(","));
-    });
-    const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "hechos.csv";
-    a.click();
-  }
-
-  async function downloadDocx(snap, docxLib) {
-    const { Document, Packer, Paragraph, TextRun, AlignmentType } = docxLib || {};
-    if (!Document) throw new Error("docx no cargada");
-    const JUST = AlignmentType.JUSTIFIED;
-    const built = buildAll(snap);
-
-    function mdRuns(str) {
-      const parts = (str || "").split(/(\*|_)/g);
-      let B = false, I = false;
-      const runs = [];
-      for (const p of parts) {
-        if (p === "*") { B = !B; continue; }
-        if (p === "_") { I = !I; continue; }
-        if (!p) continue;
-        runs.push(new TextRun({ text: p, bold: B, italics: I, underline: I ? {} : undefined }));
+  // ===== Utilidades para Word (parsing * y _ a negrita/itálica)
+  function mdRunsFactory(TextRun){
+    return function mdRuns(str){
+      const parts=(str||"").split(/(\*|_)/g);
+      let B=false,I=false; const out=[];
+      for(const p of parts){
+        if(p==="*"){ B=!B; continue; }
+        if(p==="_"){ I=!I; continue; }
+        if(!p) continue;
+        out.push(new TextRun({ text:p, bold:B, italics:I }));
       }
-      return runs;
-    }
+      return out;
+    };
+  }
 
-    const children = [];
-    children.push(new Paragraph({ children: [ new TextRun({ text: built.forDocx.titulo, bold: true }) ] }));
-    if (built.forDocx.subtitulo) {
-      children.push(new Paragraph({
-        children: [ new TextRun({ text: built.forDocx.subtitulo, bold: true, color: built.forDocx.color }) ]
-      }));
+  // ===== Word: un caso
+  async function downloadDocx(snap, lib){
+    const { Document,Packer,Paragraph,TextRun,AlignmentType }=lib||{};
+    if(!Document) throw new Error("docx no cargada");
+    const JUST=AlignmentType.JUSTIFIED;
+    const built=buildAll(snap);
+    const mdRuns = mdRunsFactory(TextRun);
+
+    const children=[];
+    // Título y subtítulo
+    children.push(new Paragraph({ children:[ new TextRun({text:built.forDocx.titulo, bold:true}) ] }));
+    if(built.forDocx.subtitulo){
+      children.push(new Paragraph({ children:[ new TextRun({text:built.forDocx.subtitulo, bold:true, color:built.forDocx.color}) ] }));
     }
-    (built.forDocx.bodyHtml || "").split(/\n\n+/).forEach((p) => {
-      children.push(new Paragraph({ children: mdRuns(p), alignment: JUST, spacing: { after: 200 } }));
+    // Cuerpo
+    (built.forDocx.bodyHtml||"").split(/\n\n+/).forEach(p=>{
+      children.push(new Paragraph({ children: mdRuns(p), alignment: JUST, spacing:{after:200} }));
     });
 
-    const doc = new Document({
-      styles: { default: { document: { run: { font: "Arial", size: 24 } } } },
-      sections: [ { children } ]
+    const doc=new Document({
+      styles:{ default:{ document:{ run:{ font:"Arial", size:24 } } } },
+      sections:[{ children }]
     });
-    const blob = await Packer.toBlob(doc);
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `Hecho_${new Date().toISOString().slice(0,10)}.docx`;
+    const blob=await Packer.toBlob(doc);
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download=`Hecho_${new Date().toISOString().slice(0,10)}.docx`;
     a.click();
   }
 
-  return { buildAll, downloadCSV, downloadDocx };
+  // ===== Word: varios
+  async function downloadDocxMulti(snaps, lib){
+    const { Document,Packer,Paragraph,TextRun,AlignmentType }=lib||{};
+    if(!Document) throw new Error("docx no cargada");
+    const JUST=AlignmentType.JUSTIFIED;
+    const mdRuns = mdRunsFactory(TextRun);
+
+    const children=[];
+    (snaps||[]).forEach((snap, idx)=>{
+      const b = buildAll(snap);
+      children.push(new Paragraph({ children:[ new TextRun({text:b.forDocx.titulo, bold:true}) ] }));
+      if(b.forDocx.subtitulo){
+        children.push(new Paragraph({ children:[ new TextRun({text:b.forDocx.subtitulo, bold:true, color:b.forDocx.color}) ] }));
+      }
+      (b.forDocx.bodyHtml||"").split(/\n\n+/).forEach(p=>{
+        children.push(new Paragraph({ children: mdRuns(p), alignment: JUST, spacing:{after:200} }));
+      });
+      if (idx < snaps.length-1){
+        children.push(new Paragraph({ children:[ new TextRun({ text:"" }) ], spacing:{after:300} }));
+      }
+    });
+
+    const doc=new Document({
+      styles:{ default:{ document:{ run:{ font:"Arial", size:24 } } } },
+      sections:[{ children }]
+    });
+    const blob=await Packer.toBlob(doc);
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download=`Hechos_${new Date().toISOString().slice(0,10)}.docx`;
+    a.click();
+  }
+
+  function downloadCSV(list){
+    const rows=[];
+    rows.push(["Nombre","Fecha","Tipo","Número","Partido","Localidad","Dependencia","Carátula","Subtítulo","Cuerpo"].join(","));
+    (list||[]).forEach(s=>{
+      const g=s.generales||{};
+      const esc=(x)=> '\"'+String(x || "").replace(/\"/g,'\\\"')+'\"';
+      rows.push([
+        s.name||"", g.fecha_hora||"", g.tipoExp||"", g.numExp||"",
+        g.partido||"", g.localidad||"", g.dependencia||"",
+        g.caratula||"", g.subtitulo||"", (s.cuerpo||"").replace(/\n/g," \\n ")
+      ].map(esc).join(","));
+    });
+    const blob=new Blob([rows.join("\n")],{type:"text/csv;charset=utf-8"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="hechos.csv"; a.click();
+  }
+
+  function downloadXLSX(list){
+    if (typeof XLSX === "undefined") throw new Error("XLSX no cargado");
+    const rows = [];
+    rows.push(["Nombre","Fecha","Tipo","Número","Partido","Localidad","Dependencia","Carátula","Subtítulo","Cuerpo"]);
+    (list||[]).forEach(s=>{
+      const g=s.generales||{};
+      rows.push([
+        s.name||"", g.fecha_hora||"", g.tipoExp||"", g.numExp||"",
+        g.partido||"", g.localidad||"", g.dependencia||"",
+        g.caratula||"", g.subtitulo||"", (s.cuerpo||"")
+      ]);
+    });
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [
+      {wch:30},{wch:10},{wch:6},{wch:10},{wch:22},{wch:18},{wch:28},{wch:22},{wch:18},{wch:80}
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, "Hechos");
+    const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
+    XLSX.writeFile(wb, `hechos_${ts}.xlsx`, { compression: true });
+  }
+
+  return { buildAll, downloadDocx, downloadDocxMulti, downloadCSV, downloadXLSX };
 })();
